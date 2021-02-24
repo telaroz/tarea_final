@@ -8,17 +8,15 @@ output:
     fig_width: 8
     fig_height: 4
     use_bookdown: true
-header-includes:
-    - \usepackage[labelformat = empty]{caption}
 ---
   
-
+**Nota: en la versión html de este documento se puede mostrar y ocultar el código utilizado en cada paso con los recuadros [Code]**
 
 # Primer paso
 
 **Escogencia entre las 3 opciones disponibles**
 
-La opción escogida es la  A: Plan de Temporada basado en datos
+Se elige la opción A: Plan de Temporada basado en datos
 
 
 # Segundo paso
@@ -31,7 +29,7 @@ Se elige el equipo de Islandia que participó en el mundial de Egipto 2021 ya qu
 
 Se elige utilizar los datos 'Play by Play' del mundial de Egipto. 
 
-Se descargan a memoria todos los partidos directamente desde la página de github. 
+Se descargaron a memoria todos los partidos directamente desde la página de github. 
 
 
 ```{r}
@@ -39,12 +37,19 @@ library(magrittr)
 partidos <- 
   data.table::fread(
     'https://raw.githubusercontent.com/telaroz/egipto21/main/partidos_pbp_egipto2021.csv')
+
+partidos[,equipo := NULL]
+partidos[,asistencia_numero := NULL]
+
+posiciones <- data.table::fread('posiciones.csv')
+
+partidos <- data.table::merge.data.table(partidos, posiciones, by = 'equipo', all.x = TRUE)
 ```
 
 # Cuarto paso
 **Establecer una conclusión estratégica a partir de los datos observados mediante un argumento desarrollado con texto y datos**
 
-El objetivo principal del análisis es generar recomendaciones para mejorar la eficacia de los lanzamientos de 7 metros.
+El objetivo principal del análisis fue generar recomendaciones para mejorar la eficacia de los lanzamientos de 7 metros. Para esto se analizaron únicamente los datos de este tipo de lanzamiento, por lo que las estadísticas hacen referencia únicamente a ellos. 
 
 
 ## Preparación de los datos
@@ -52,6 +57,9 @@ El objetivo principal del análisis es generar recomendaciones para mejorar la e
 A partir de la tarea **[colaborativa 2](https://telaroz.github.io/colaborativa2/)** se obtiene que la eficacia desde los 7 metros en el mundial fue del 76.9%.
 
 
+<center>
+**Eficacia desde 7m en Egipto 2021**
+</center>
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 library(magrittr)
 library(collapse)
@@ -60,13 +68,10 @@ tabla <- data.table::fread('xg_egipto.csv')[posicion_tiro == 'Penalty', 1:3][, x
 kableExtra::kable(tabla) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
-<center>
-**Eficacia desde 7m en Egipto 2021**
-</center>
 
 <br>
 
-Para el análisis completo, a partir de la tabla de partidos se mantienen solamente las acciones de 7 metros y se excluye la tanda de 7 metros final del partido Egipto-Dinamarca. 
+Para el análisis completo, a partir de la tabla de partidos se mantuvieron solamente las acciones de 7 metros y se excluyó la tanda de 7 metros final del partido Egipto-Dinamarca. 
 
 ```{r, warning = FALSE}
 penales <- partidos[posicion_tiro == 'Penalty' & !is.na(mitad) & mitad %in% 1:2]
@@ -79,27 +84,34 @@ penales[, inicio_posesion_numerico := as.numeric(lubridate::ms(inicio_posesion))
 
 ## Marcos de referencia y comparación de equipos
 
-La siguiente tabla muestra la eficacia de los equipos. Islandia terminó en el puesto 16 en eficacia desde 7 metros con 76.67%, muy cercano al promedio general del mundial, por lo que podría ser un punto mejora. 
+La siguiente tabla muestra la eficacia de los equipos. Se observa que 3 de los primeros 6 lugares en el mundial están en el top 5 de eficacia en tiros de penal
 
+Islandia terminó en el puesto 16 en eficacia desde 7 metros con 76.67%, muy cercano al promedio general del mundial, por lo que según este margen de referencia, este podría ser un punto mejora para un equipo como Islandia que aspira a estar en top-10 del mundo. 
+
+
+<center>
+**Eficacia por equipo desde 7m**
+</center>
 ```{r}
-tiros_por_equipo <- penales[, .(total_goles = collapse::fsum(gol), 
+tiros_por_equipo <- penales[nombre_equipo != 'Cape Verde', .(total_goles = collapse::fsum(gol), 
                                 eficacia_torneo = collapse::fmean(gol)), 
-                            by = equipo
+                            by = .(nombre_equipo, posicion_final, equipo)
                           ][, total_tiros_fallados := total_goles/eficacia_torneo - total_goles
                           ][order(-eficacia_torneo)
-                          ][, eficacia_torneo := scales::percent(eficacia_torneo)]
+                          ][, eficacia_torneo := scales::percent(eficacia_torneo)][, posicion_eficacia := 1:.N]
 
-data.table::setcolorder(tiros_por_equipo, c('equipo', 'total_goles', 'total_tiros_fallados', 'eficacia_torneo'))
+data.table::setcolorder(tiros_por_equipo, c('nombre_equipo', 'total_goles', 'total_tiros_fallados', 'eficacia_torneo', 'posicion_final', 'posicion_eficacia'))
 
-kableExtra::kable(tiros_por_equipo) %>%
+kableExtra::kable(tiros_por_equipo[,.(nombre_equipo, total_goles, total_tiros_fallados, eficacia_torneo, posicion_final, posicion_eficacia)]) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
 
+## Casos de éxito por alta eficacia
 
-A continuación se estudian los lanzamientos desde 7 metros fallados que pudieron haber influído en que se obtuviera un empate o una victoria al final del partido. Es decir, aquellos partidos donde la diferencia fue menor o igual a la cantidad de lanzamientos fallados por un equipo.
-
+Si bien mantener una eficacia alta durante los partidos ayuda a controlar mejor y juego y tener mayor margen de maniobra, anotar los penales en momentos claves impacta más el resultado final. Se muestran 4 partidos donde anotar estos lanzamientos ayudó a ganar puntos del partido. 
 
 ```{r, warning = FALSE}
+
 
 resumen <- collapse::collap(penales, gol ~ equipo + id_partido, list(fsum, fmean))[, tiros_fallados := fsum.gol/fmean.gol - fsum.gol
 ][, .(id_partido, equipo, goles_anotados = fsum.gol, tiros_fallados, eficacia_partido = fmean.gol)]
@@ -114,6 +126,113 @@ resumen_final <- collapse::replace_NA(resumen_final)
 
 resumen_final <- data.table::merge.data.table(resumen_final, tiros_por_equipo, all.x = TRUE, by = 'equipo')
 
+
+ganadores <- resumen_final[(es_casa == 0 & diferencia_final <= 0) | (es_casa == 1 & diferencia_final >= 0)]
+
+puntos_ganados <- ganadores[abs(diferencia_final) <= goles_anotados & eficacia_partido >= 0.75] # Buen porcentaje de anotación, considerablemente por encima de la media
+
+# Casos de éxito, donde fallar tan solo uno de los 7m implicaría perder 1 punto. 
+# Todos los equipos están por encima del 76.9% 
+
+casos_exito <- puntos_ganados[abs(diferencia_final) <= 1 & goles_anotados > 2 &  id_partido != 101][id_partido %in% c(7, 11, 88, 100)]
+casos_exito[, total_goles := NULL][, total_tiros_fallados := NULL][, eficacia_partido := scales::percent(eficacia_partido)]
+
+exitos <- penales[id_partido %in% casos_exito$id_partido, .(id_partido, tiempo, equipo, equipo_rival, marcador, gol, diferencia, tiempo_numerico)]
+
+```
+
+
+### Bielorusia-Rusia
+
+En este partido, Bielorusia tuvo una eficacia del 100% en tiros de 7 metros. Se destaca que anotó sus 3 tiros en los últimos 10 minutos, cada uno para poder empatar el partido en ese momento. El partido terminó 32-32, por lo que ser eficaz en el partido en general y en momentos clave en particular influyó positivamente en obtener un empate con un rival superior en el papel. 
+
+<center>
+**Penales en el partido Bielorusia-Rusia de fase de grupos**
+</center>
+```{r}
+
+
+kableExtra::kable(exitos[id_partido == 7][order(tiempo_numerico)][, tiempo_numerico := NULL]) %>%
+  kableExtra::kable_styling(full_width = FALSE)
+
+```
+
+<br>
+
+
+### Brasil-España
+
+
+En un partido muy emocionante, Brasil logró empatar un partido contra uno de los equipos favoritos del torneo. A falta de 10 minutos, Brasil perdía por 3 goles. En el minuto 56:42, Brasil anota un penal muy importante, que lo mantiene con paridad en el marcador en ese momento. El partido finalizó en un empate considerado como sorpresa para el equipo brasileño.   
+
+<center>
+**Penales en el partido Brasil-España de fase de grupos**
+</center>
+```{r}
+
+kableExtra::kable(exitos[id_partido == 11][order(tiempo_numerico)][, tiempo_numerico := NULL]) %>%
+  kableExtra::kable_styling(full_width = FALSE)
+
+```
+
+<br>
+
+### Angola-Marruecos
+
+En un partido donde ambos equipos tuvieron la delantera por distintos periodos del partido, Marruecos necesitó un tiro de 7 metros a falta de 7 segundos para lograr la prórroga. Finalmente Marruecos obtuvo la victoria, por lo que anotar el tiro al final del tiempo reglamentario derivó finalmente en mejorar la clasificación final. 
+
+
+<center>
+**Penales en el partido Angola-Marruecos por el lugar 29**
+</center>
+```{r}
+
+
+kableExtra::kable(exitos[id_partido == 100][order(tiempo_numerico)][, tiempo_numerico := NULL]) %>%
+  kableExtra::kable_styling(full_width = FALSE)
+
+```
+### Egipto-Dinamarca
+
+En el partido más emocionante del mundial, Dinamarca logró la clasificación a semifinales tras tener una eficacia mayor que Egipto en la tanda final de 7 metros. Dinamarca terminó siendo campeona del mundial, en parte gracias a su capacidad de anotación en los penales
+
+<center>
+**Tanda de penales en los cuartos de final Dinamarca-Egipto**
+</center>
+```{r, warning = FALSE}
+
+penales_din <- partidos[posicion_tiro == 'Penalty' & is.na(mitad) & id_partido == 101]
+penales_din[es_casa == TRUE, equipo := 'DEN']
+penales_din[es_casa == TRUE, equipo_rival := 'EGY']
+penales_din[es_casa == FALSE, equipo := 'EGY']
+penales_din[es_casa == FALSE, equipo_rival := 'DEN']
+penales_din <- penales_din[, .(id_partido, equipo, equipo_rival, marcador, gol, diferencia)]
+
+kableExtra::kable(penales_din) %>%
+  kableExtra::kable_styling(full_width = FALSE)
+```
+
+
+
+
+## Casos donde potencialmente se perdieron puntos por fallos en tiros de 7 metros
+
+
+A continuación se estudiaron los lanzamientos desde 7 metros fallados que pudieron haber influído en que se obtuviera un empate o una victoria al final del partido. Es decir, aquellos partidos donde la diferencia final del encuentro fue menor o igual a la cantidad de lanzamientos fallados por un equipo.
+
+
+
+Islandia aparece con 3 derrotas por 2 goles en los partidos de la main round. Llama la atención que en los 3 partidos, Islandia falló 2 tiros de 7 metros. Con esto, terminó con una eficacia en cada partido menor a su propio promedio en el torneo. 
+
+
+<center>
+**Lanzamientos con mayor peso en los partidos que influyen en pérdida de puntos**
+</center>
+
+
+```{r, warning = FALSE}
+
+
 perdedores <- resumen_final[(es_casa == 0 & diferencia_final >= 0) | 
                               (es_casa == 1 & diferencia_final <= 0)]
 
@@ -122,18 +241,20 @@ puntos_perdidos <- perdedores[abs(diferencia_final) <= tiros_fallados & tiros_fa
                             ] # Se filtra el partido donde se llegó hasta los lanzamientos de 7m.
 
 
-kableExtra::kable(puntos_perdidos) %>%
+kableExtra::kable(puntos_perdidos[,eficacia_partido := scales::percent(eficacia_partido)
+                                  ][,.(nombre_equipo, id_partido, es_casa, diferencia_final,
+                                       goles_anotados, tiros_fallados, eficacia_partido,
+                                       total_goles, total_tiros_fallados, eficacia_torneo)]) %>%
   kableExtra::kable_styling(full_width = FALSE)
 
 ```
 
 
 
-Islandia aparece con 3 derrotas por 2 goles en los partidos de la main round. Además, 2 de los tiros de 7 metros fueron fallados con lo que obtiene una eficacia en cada partido, menor su propio promedio del torneo y el promedio general. 
 
 ## Peso por lanzamiento de 7m
 
-De manera ingenua se puede considerar que de anotar todos los tiros fallados en el partido, estos equipos habrían obtenido un empate o una victoria de ellos. Sin embargo, el momento del juego en el que se generan las ocasiones es importante: cuanto más cercano el encuentro del final y menor la diferencia de goles, mayor importancia tienen los lanzamientos. 
+Si se toman distintos factores que afectan el rendimiento y el resultado de un equipo de forma individual y descontextualizada, se puede considerar que estos equipos de anotar todos los tiros fallados en el partido, habrían obtenido un empate o una victoria de ellos. Sin embargo, el momento del juego en el que se generan las ocasiones es importante: cuanto más cercano el encuentro del final y menor la diferencia de goles, mayor importancia tienen los lanzamientos. Se estudió la importancia de los lanzamientos para Islandia en cada uno de los partidos y se determinó que este aspecto resultó crítico a la hora de obtener resultados en los partidos que jugó en la main round.
 
 
 Para tomar en cuenta esta importancia, se asigna un peso para cada lanzamiento un valor entre 0 y 1. Se toman las ideas de Oliver Brosig de [Handballytics](https://handballytics.de/objektive-spielerbewertung-playerscore/) para generar un modelo similar al mostrado por Ferran Miró-Gea en la sesión número 5. 
@@ -148,12 +269,12 @@ peso_lanzamiento <- function(diff_goles, seg_trans, mu = 0, sigma = 4){ # Funci�
 
 
 
+Se tomaron los equipos donde los 7m potencialmente influyeron en la pérdida de puntos y observamos el peso de cada uno de los tiros. 
+Islandia falló un 7 metros a falta de menos de 10 minutos del final, con una diferencia de un gol del rival tanto en el partido contra Suiza como contra Francia (oservaciones 10 y 11 de la tabla). 
 
-
-
-Se toman los equipos donde los 7m potencialmente influyeron en la pérdida de puntos y observamos el peso de cada uno de los tiros. 
-Islandia falló un 7 metros a falta de menos de 10 minutos del final, con una diferencia de un gol del rival tanto en el partido contra Suiza como contra Noruega. 
-
+<center>
+**Lanzamientos con mayor peso en los partidos que influyen en potencial pérdida de puntos**
+</center>
 ```{r}
 penales[, peso_lanzamiento := peso_lanzamiento(diff_goles = diferencia, seg_trans = tiempo_numerico)]
 
@@ -170,7 +291,13 @@ DT::datatable(tiros_de_perdedores[,.(id_partido, equipo, equipo_rival, es_casa,
 
 
 
-Se genera la columna `peso_ponderado_lanz_7m_falladas`, la cual describe el peso que en conjunto tuvieron los lanzamientos de 7m fallados en cada partido. 2 de los partidos de Islandia aparecen en el top-6 según esta métrica. Además, en este top-6 es el único equipo con más de 1 lanzamiento fallado en el partido. De esto se puede concluir que un mejor tirador de 7 metros pudo haber hecho la diferencia en el partido. 
+Se genera la columna _peso_ponderado_lanz_7m_falladas_, la cual describe el peso que en conjunto tuvieron los lanzamientos de 7m fallados en cada partido. 2 de los partidos de Islandia aparecen en el top-6 según esta métrica. Además, en este top-6 es el único equipo con más de 1 lanzamiento fallado en el partido. De esto se puede concluir que un mejor tirador de 7 metros pudo haber hecho la diferencia en el partido. 
+
+
+<center>
+**Peso de los lanzamientos fallados por partido**
+</center>
+
 
 ```{r}
 # Se asgina el peso en el momento en el que se toma el 7m
@@ -199,8 +326,21 @@ kableExtra::kable(puntos_perdidos[,.(equipo, id_partido,
 ## Posibles áreas de mejora
 
 Se estudia si la cantidad única de tiradores por equipo y la especialización de tiradores durante el torneo tuvo alguna influencia en la eficacia.
-De este análisis, se exluyen aquellos jugadores que solamente hicieron un lanzamiento de 7m 
-Además, se excluye Cabo Verde, equipo que solamente participó de un partido.
+De este análisis, se exluyen aquellos jugadores que solamente hicieron un lanzamiento de 7m.
+Además, se excluye Cabo Verde, equipo que solamente participó en un partido.
+
+
+
+Obtenemos una correlación positiva (0.53) considerablemente alta entre el porcentaje de especialización de lanzadores de 7m y la eficacia del equipo. Es decir, cuanto mayor la especialización, más eficaz (esto no implica necesariamente causalidad). Además, vemos una correlación negativa (-0.44) entre la cantidad de tiradores en un equipo y su eficia. Es decir, cuantos menos jugadores lanzan 7m, más eficaz es el equipo en general. 
+
+Ambas correlaciones son considerablemente altas y sugieren que son variables importantes a tener en cuenta. 
+
+
+
+<center>
+**Correlaciones de variables con eficacia**
+</center>
+
 
 
 ```{r}
@@ -222,7 +362,6 @@ tiradores_final[, eficacia_torneo_numerica := as.numeric(stringr::str_sub(eficac
 cor_especialista <- cor(tiradores_final$eficacia_torneo_numerica, tiradores_final$porcentaje_tiros_especialista)
 cor_cantidad_tiradores <- cor(tiradores_final$eficacia_torneo_numerica, tiradores_final$cantidad_unica_tiradores)
 
-tiradores_final[, porcentaje_tiros_especialista := scales::percent(porcentaje_tiros_especialista)]
 
 cors = data.table::data.table(`Correlación Especialización con Eficacia` = cor_especialista,
                               `Correlación Cantidad Tiradores con Eficacia` = cor_cantidad_tiradores)
@@ -230,27 +369,46 @@ cors = data.table::data.table(`Correlación Especialización con Eficacia` = cor
 kableExtra::kable(cors) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
-<center>
-**Correlaciones con la eficacia**
-</center>
 
+Además, podemos verificar con un modelo lineal simple, la validez estadística de la especialización para describir la eficacia.
 
-Obtenemos una correlación positiva considerablemente alta entre el porcentaje de especialización de lanzadores de 7m y la eficacia del equipo. Es decir, cuanto mayor la especialización, más eficaz (no implica necesariamente causalidad). Además, vemos una correlación negativa entre la cantidad de tiradores en un equipo y la eficia. Es decir, cuantos menos jugadores lanzan 7m, más eficaz es el equipo en general. 
+**Nota: La muestra de este mundial es algo limitada, por lo que se tienen que tomar estos resultados con cuidado**
 
-Ambas correlaciones son considerablemente altos y sugieren que son variables importantes a tener en cuenta. 
+Si bien se podría hacer un estudio completo para verificar la validez del modelo, con la visión del resumen básico se observa que los residuos parecen seguir el supuesto de normalidad (centrados en cero, rangos intercuantiles simétricos). Además, observamos que el valor-p de nuestra variable _porcentaje_tiros_especialista_ es de 0.2% por lo que esta es estadísticamente significativa. Finalmente, se observa que el $R^2$ es de 0.28, por lo que podríamos decir que con este modelo de tan solo una variable, podemos explicar un 28% de la varianza en la eficacia. 
 
 
 
 ```{r}
-kableExtra::kable(tiradores_final[order(-eficacia_torneo_numerica)][,eficacia_torneo_numerica := NULL]) %>%
-  kableExtra::kable_styling(full_width = FALSE)
+modelo <- lm(eficacia_torneo_numerica ~ porcentaje_tiros_especialista, tiradores_final)
+summary(modelo)
 ```
 
 
-Se observa que Islandia es el undécimo equipo en especialización de su tirador de 7 metros. Si bien está por encima del promedio de especialización, hay margen de mejora. 
+<br>
 
 
+Al estudiar cómo distribuyen los equipos sus tiros de penal, se observa que Islandia es el undécimo equipo en especialización de su tirador de 7 metros. Si bien está por encima del promedio en esta métrica, hay margen de mejora. 
 
+<center>
+**Porcentajes de especialización del lanzador**
+</center>
+
+```{r}
+
+kableExtra::kable(tiradores_final[order(-porcentaje_tiros_especialista)
+                                ][, porcentaje_tiros_especialista := scales::percent(porcentaje_tiros_especialista)
+                                ][,eficacia_torneo_numerica := NULL]) %>%
+  kableExtra::kable_styling(full_width = FALSE)
+```
+
+<br>
+
+Al ver más de cerca el comportamiento de los tiradores de Islandia, se observa que 2 tiradores distintos del especialista se dividen en partes iguales los tiros restantes.  
+
+
+<center>
+**Lanzadores de 7m de Islandia**
+</center>
 
 ```{r}
 
@@ -259,98 +417,52 @@ islandia <- penales[equipo == 'ISL', .(Goles = sum(gol), Cantidad_tiros = .N), .
       ][, eficacia := scales::percent(Goles/Cantidad_tiros)][]
 
 
-kableExtra::kable(islandia) %>%
+kableExtra::kable(islandia[c(2, 1, 3)]) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
-<center>
-**Lanzadores de 7m de Islandia**
-</center>
 
-<br>
-
-Al ver más de cerca el comportamiento de los tiradores de Islandia, se puede ver que 2 tiradores distintos del especialista se dividen en partes iguales los tiros restantes.  
-
-
-<br>
-<br>
 
 # Herramienta de marcaje de 7m 
 
-Sin duda los datos que se obtienen de un equipo en una sola competición, pueden dar una idea de qué se puede mejorar y dónde hubo fallos. Sin embargo, el cuerpo técnico conoce más detalles y toma en cuenta más variables a la hora de tomar decisiones. Estas decisiones están basadas en observaciones anterior: fogueos, entrenamientos, datos recogidos, además del conocimiento general y específico. Por lo tanto, este análisis puede ayudar a definir detalles a mejorar en los entrenamientos, por ejemplo, preparar mejor al especialista de lanzamientos de 7m. 
+Sin duda los datos que se obtienen de un equipo en una sola competición, pueden dar una idea de qué se puede mejorar y dónde hubo fallos. Sin embargo, el cuerpo técnico conoce más detalles y toma en cuenta más variables a la hora de tomar decisiones. Estas decisiones están basadas en observaciones anteriores: fogueos, entrenamientos, datos recogidos, además del conocimiento general y específico de sus propios jugadores y los rivales.
+
+Este análisis puede ayudar a definir detalles a mejorar en los entrenamientos, por ejemplo, preparar mejor al especialista de lanzamientos de 7m. 
 
 
-Para esto, se puede crear una herramienta específica para estudiar los 7m como una aplicación  para recopilar datos. Acá se muestra un ejemplo (!! Hacerla genérica!!) <https://telaroz.shinyapps.io/penales/>.
-
-Con los datos generados se podría estudiar: 
+Para esto, se puede crear una herramienta específica para estudiar los 7m, por ejemplo con una aplicación para recopilar datos. Acá se muestra un ejemplo  <https://telaroz.shinyapps.io/lanz_7_metros/>.
 
 
-- secuencias de tiros de 7m, según posición
-- tipos de tiro verdaderamente exitosos por jugador, cuáles evitar.
-- potencialmente mejorar cierto tipo de lanzamiento
-- Escogencia de lanzador según características del portero contrario. Por ejemplo, un portero que sale a 4 metros versus uno que se queda más cerca de la portería. 
+Esta aplicación en particular genera datos sobre la posición con coordenadas de cada lanzamiento, detalles de cómo se toma el tiro y detalles detalles de la posición del portero. 
+
+Con los datos generados es posible  estudiar: 
+
+- secuencias de tiros de 7m, según distintas métricas: posición de lanzamiento, posición del portero, fintas, etc.
+- tipos de tiro verdaderamente exitosos por jugador y cuáles tipos evitar.
+- Identificar un tipo de tiro a mejorar. 
+- Definir al lanzador según características del portero contrario. Por ejemplo, un portero que sale a 4 metros versus uno que se queda más cerca de la portería. 
 
 
+# Reconocimientos 
+
+-[Matt Dowle](https://github.com/mattdowle) y [otros autores del paquete {data.table}](https://cloud.r-project.org/web/packages/data.table/) por el mejor paquete de manipulación de datos en R.
 
 
+-[Sebastian Krantz](https://github.com/SebKrantz) por su nuevo paquete ultra-rápido para resúmenes y manipulación de datos.
 
 
+-[Winston Chang](https://twitter.com/winston_chang) y [otros autores](https://cran.r-project.org/web/packages/shiny/index.html) del paquete {shiny} para creación de dashboards y aplicaciones fácilmente con R.
 
 
+-[Yihui Xie](https://twitter.com/xieyihui) por la creación del paquete {DT} en R para mostrar tablas interactivas en documentos html.
 
 
+-[Julien Barnier](https://twitter.com/lapply) por el paquete {rmdformats} para el formato de este documento.
 
 
+-[Oliver Brosig](https://twitter.com/Johnny_Sevilla) por su descripción del modelo de asignación de peso por posesión.
 
 
-# Secciones posibles por completar
-
-
-
-
-
-
-
-
-Posibles cosas a agregar:
-
-EN DEFENSA::
-
-Además, estudiar los equipos que mejor tiran 7m, a ver cómo están sus lanzamientos desde 6m, a ver si no es mejor dejar que tiren desde lugares distintos del 7m. 
-
-
-
-## Otras cosas por hacer
-
-Ver cuáles partidos se obtuvo un porcentaje alto de goles anotados y gracias a eso se ganó un partido (85%+ anotados). Es decir, analizar éxitos de lanzadores.
-
-## Formas de mejorar la escogencia de jugadores. 
-
-Adjuntar la aplicación.
-
-Se pueden estudiar:
-- secuencias de tiros de 7m
-- tipos de tiro verdaderamente exitosos por jugadores y cuáles evitar
-- Opción para mejorar cierto tipo de tiro
-- Escogencia de lanzador según características del portero contrario
-- Además, se puede utilizar como 
-
-(Crear versión estándar de la que está ya hecha para poner el link)
-<https://telaroz.shinyapps.io/penales/>
-
-
-## Anexo
-
-### Paquetes utilizados
-data.table
-collapse
-lubridate
-
-### Reconocimientos 
-
-handbanaltics (Oliver Brosig)
-Ferran-Mirro por la código del cual fue basada la función.
-Y lo de los paquetes
-
+-[Ferran Miró-Gea](https://www.linkedin.com/in/ferranmirogea) por la código del cual fue basada la función de pesos por posesión. 
 
 
 
