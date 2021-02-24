@@ -230,6 +230,15 @@ cors = data.table::data.table(`Correlación Especialización con Eficacia` = cor
 kableExtra::kable(cors) %>%
   kableExtra::kable_styling(full_width = FALSE)
 ```
+<center>
+**Correlaciones con la eficacia**
+</center>
+
+
+Obtenemos una correlación positiva considerablemente alta entre el porcentaje de especialización de lanzadores de 7m y la eficacia del equipo. Es decir, cuanto mayor la especialización, más eficaz (no implica necesariamente causalidad). Además, vemos una correlación negativa entre la cantidad de tiradores en un equipo y la eficia. Es decir, cuantos menos jugadores lanzan 7m, más eficaz es el equipo en general. 
+
+Ambas correlaciones son considerablemente altos y sugieren que son variables importantes a tener en cuenta. 
+
 
 
 ```{r}
