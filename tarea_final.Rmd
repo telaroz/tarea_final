@@ -8,6 +8,7 @@ output:
     fig_width: 8
     fig_height: 4
     use_bookdown: true
+runtime: shiny
 ---
   
 **Nota: en la versión html de este documento se puede mostrar y ocultar el código utilizado en cada paso con los recuadros [Code]**
@@ -468,5 +469,270 @@ Con los datos generados es posible  estudiar:
 
 
 
+```{r, echo = FALSE}
+library(shiny)
+library(shinydashboard)
+library(ggplot2)
+library(shinyWidgets)
+library(data.table)
+library(shinyjs)
 
+
+
+ui <- dashboardPage(
+  
+  dashboardHeader(title = "Anotador de Penales"),
+  
+  dashboardSidebar(collapsed = FALSE,
+                   sidebarMenu(
+                     menuItem("Marcador de Tiros de 7m", tabName = "dashboard", icon = icon("futbol")),
+                     menuItem('Escogencia de Jugadores', tabName = 'escogencia_M', icon = icon("people-carry"))
+                   )
+  ),
+  dashboardBody(
+    tabItems(
+      
+      tabItem(tabName = 'escogencia_M',
+              column(width = 3,
+                     checkboxGroupButtons(inputId = "escogencia_mayor", "Escogencia Jugadores Entrenamiento Mayor",
+                                          c(paste0('jugador_', 1:15), 
+                                            c('Invitado_1', 'Invitado_2', 'Invitado_3')), 
+                                          selected = paste0('jugador_', 1:15),
+                                          status = "primary", 
+                                          direction = 'vertical',
+                                          checkIcon = list(
+                                            yes = icon("ok", 
+                                                       lib = "glyphicon"),
+                                            no = icon("remove",
+                                                      lib = "glyphicon")))),
+              
+              
+              column(width = 3,
+                     checkboxGroupButtons(inputId = "escogencia_mayor_porteros", "Escogencia Porteros Entrenamiento Mayor",
+                                          paste0('portero_', 1:4), 
+                                          selected = paste0('portero_', 1:3),
+                                          status = "primary", 
+                                          direction = 'vertical',
+                                          checkIcon = list(
+                                            yes = icon("ok", 
+                                                       lib = "glyphicon"),
+                                            no = icon("remove",
+                                                      
+                                            ))))),
+      # First tab content
+      tabItem(tabName = "dashboard",
+              
+              
+              fluidRow(
+                shinyjs::useShinyjs(),
+                column(width = 2, radioGroupButtons(
+                  inputId = "tirador",
+                  label = "Tirador ",
+                  choices = paste0('jugador_', 1:15),
+                  # size = 'lg',
+                  direction = 'vertical',
+                  individual = FALSE,
+                  status = 'primary', 
+                  checkIcon = list(
+                    yes = icon("ok", 
+                               lib = "glyphicon"))
+                )),
+                column(width = 2, radioGroupButtons(
+                  inputId = "portero",
+                  label = "Portero ",
+                  choices = paste0('portero_', 1:3),
+                  # size = 'lg',
+                  direction = 'horizontal',
+                  individual = FALSE,
+                  status = 'primary', 
+                  checkIcon = list(
+                    yes = icon("ok", 
+                               lib = "glyphicon"))
+                ),radioGroupButtons(inputId = "color",label = "Gol", choices =  c("Gol", "No Gol"), size = 'lg'),
+                sliderTextInput(
+                  inputId = "fatiga",
+                  label = "Cansancio", 
+                  choices = seq(0L, 10L, 1L),
+                  grid = TRUE
+                ),
+                checkboxGroupButtons(
+                  inputId = "Adicionales", 
+                  label = "Tipo de tiro adicional",
+                  size = 'lg',
+                  choices = c("Finta", 
+                              "Pique", "Bañito", "Rosca"),
+                  checkIcon = list(
+                    yes = tags$i(class = "fa fa-check-square", 
+                                 style = "color: steelblue"),
+                    no = tags$i(class = "fa fa-square-o", 
+                                style = "color: steelblue"))
+                ), 
+                materialSwitch(
+                  inputId = "material_finta",
+                  label = "Tiro al mismo lugar de la finta", 
+                  value = FALSE,
+                  status = "primary"
+                ),
+                
+                sliderInput("posicion_portero", "Salida del portero en metros",
+                            min = 0, max = 4,
+                            value = 0, step = 0.25),
+                
+                
+                checkboxGroupButtons(
+                  inputId = "infraccion", 
+                  label = "Infraccion",
+                  size = 'lg', 
+                  choices = c("Desliza/Maja", 
+                              "Levanta Pie", 
+                              "Tiempo",
+                              "Se pasa"),
+                  checkIcon = list(
+                    yes = tags$i(class = "fa fa-check-square", 
+                                 style = "color: steelblue"),
+                    no = tags$i(class = "fa fa-square-o", 
+                                style = "color: steelblue"))
+                ),   
+                textInput("comentarios", "Comentario", "")), 
+                column(width = 6,
+                       h4("Click en el gráfico para agregar el tiro"),
+                       actionButton("rem_point", "Quite el último dato"),
+                       plotOutput("plot1", click = "plot_click")),
+                column(width = 6,
+                       h4("Tiros realizados"),
+                       tableOutput("table")),    downloadButton("download", "Descargar Sesión", size = 'lg'))
+              
+              
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  
+  jugadores_mayor <- paste0('jugador_', 1:15)
+  
+  
+  jugadores <- unique(c(jugadores_mayor, 'Invitado_1', 'Invitado_2', 'Invitado_3'))
+  
+  
+  porteros_mayor <- paste0('portero_', 1:4)
+  porteros <- unique(c(porteros_mayor, 'Invitado1'))
+  
+  
+  observeEvent(input$escogencia_mayor, {
+    jugadores_escogidos <- jugadores[jugadores %in% input$escogencia_mayor]
+    
+    # Method 1
+    updateRadioGroupButtons(session = session, inputId = "tirador",
+                            choices = jugadores_escogidos, selected = jugadores_mayor, status = 'primary', checkIcon = list(
+                              yes = icon("ok", 
+                                         lib = "glyphicon")))
+    
+    
+  }, ignoreInit = TRUE)
+  
+  
+  
+  observeEvent(input$escogencia_mayor_porteros, {
+    porteros_escogidos <- porteros[porteros %in% input$escogencia_mayor_porteros]
+    
+    # Method 1
+    updateRadioGroupButtons(session = session, inputId = "portero",
+                            choices = porteros_escogidos, selected = porteros_mayor, status = 'primary', checkIcon = list(
+                              yes = icon("ok", 
+                                         lib = "glyphicon")))
+    
+    
+  }, ignoreInit = TRUE)
+  
+  
+  
+  values <- reactiveValues()
+  
+  
+  
+  # Ahora el de la mayor
+  
+  values$DT <- data.table(x = numeric(),
+                          y = numeric(),
+                          gol = character(),
+                          tirador = character(),
+                          portero = character(),
+                          hora = character(),
+                          adicional = character(),
+                          infraccion = character(),
+                          posicion_portero = numeric(),
+                          tiro_igual_finta = logical(),
+                          fatiga = integer(),
+                          comentario = character())
+  
+  # Create a plot
+  output$plot1 = renderPlot({
+    ggplot(values$DT, aes(x = x, y = y)) +
+      geom_point(color = data.table::fifelse(values$DT$gol == 'Gol', 'Green', 'Red'), size = 6) +
+      lims(x = c(-3, 3), y = c(-1, 2)) +
+      theme(legend.position = "none") +
+      # include so that colors don't change as more colors are chosen
+      scale_color_discrete(drop = FALSE) +
+      theme_void() +
+      geom_segment(aes(x = -1.5, xend = 1.5, y = 1, yend = 1), colour = "#7A1F1F", size = 3) + 
+      geom_segment(aes(x = -1.5, xend = -1.5, y = -1, yend = 1), colour = "#7A1F1F", size = 3) + 
+      geom_segment(aes(x = 1.5, xend = 1.5, y = -1, yend = 1), colour = "#7A1F1F", size = 3) +
+      coord_fixed()
+  })
+  
+  # Add a new row, as a reaction to a click
+  observeEvent(input$plot_click, {
+    add_row <- data.table(x = input$plot_click$x,
+                          y = input$plot_click$y,
+                          gol = ifelse(input$color == 'Gol', 'Gol', 'NO Gol'),
+                          tirador = input$tirador,
+                          portero = input$portero,
+                          hora = as.character(Sys.time()),
+                          adicional = paste0(sort(input$Adicionales), collapse = '_'),
+                          infraccion = paste0(sort(input$infraccion), collapse = '_'),
+                          posicion_portero = paste0(sort(input$posicion_portero), collapse = '_'),
+                          tiro_igual_finta = input$material_finta,
+                          fatiga = input$fatiga,
+                          comentario = input$comentarios)
+    values$DT <- rbind(values$DT, add_row)
+  })
+  
+  # Action button in case a row should be removed.
+  observeEvent(input$rem_point, {
+    rem_row <- values$DT[-nrow(values$DT), ]
+    values$DT <- rem_row
+  })
+  
+  # Render the table
+  output$table <- renderTable({
+    data <- data.table::setDT(tail(values$DT, 10))
+    a_mostrar <- nrow(data[!is.na(x)])
+    data[min(10,a_mostrar):1]
+  })
+  
+  # Add a download button
+  output$download <- downloadHandler(
+    filename = function() {
+      paste0('penales_mayor', Sys.Date(),'.csv')
+    },
+    content = function(file) {
+      data.table::fwrite(values$DT, file)
+    }
+  )
+  
+  observeEvent(input$plot_click, {
+    shinyjs::reset(id = 'comentarios')
+    shinyjs::reset(id = 'posicion_portero')
+  })
+  
+}
+
+
+
+shinyApp(ui, server, options = list(height = 1200, width = 1500))
+
+```
 
